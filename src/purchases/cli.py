@@ -3,10 +3,12 @@
 import argparse
 import shutil
 import sys
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from .config import get_db_path, get_vault_path, get_resolved_config
-from .db import get_db, get_stats, get_items_for_export, mark_exported, CATEGORIES
+from .db import get_db, get_stats, get_items_for_export, mark_exported, search_items, CATEGORIES
 from .importers import import_amazon_items
 from .exporter import export_item_to_vault
 
@@ -107,6 +109,35 @@ def cmd_stats(args):
     print(f"  Consumable (skip vault): {stats['consumable']}")
 
 
+def cmd_search(args):
+    """Search purchases with filters."""
+    conn = get_db()
+
+    # Parse date arguments
+    on_date = date.fromisoformat(args.date) if args.date else None
+    amount = Decimal(args.amount) if args.amount else None
+    from_date = date.fromisoformat(args.from_date) if args.from_date else None
+    to_date = date.fromisoformat(args.to_date) if args.to_date else None
+
+    items = list(search_items(
+        conn,
+        on_date=on_date,
+        amount=amount,
+        from_date=from_date,
+        to_date=to_date,
+    ))
+
+    if not items:
+        print("No matching items found.")
+        return
+
+    print(f"Found {len(items)} matching items:\n")
+    for item in items:
+        print(f"  [{item.category}] {item.name[:60]}")
+        print(f"    EUR {item.price} | {item.purchase_date} | {item.vendor}")
+        print()
+
+
 def cmd_list(args):
     """List items pending export."""
     conn = get_db()
@@ -200,6 +231,26 @@ def main():
     # stats command
     p_stats = subparsers.add_parser("stats", help="Show database statistics")
     p_stats.set_defaults(func=cmd_stats)
+
+    # search command
+    p_search = subparsers.add_parser("search", help="Search purchases with filters")
+    p_search.add_argument(
+        "--date", "-d",
+        help="Search by exact date (YYYY-MM-DD)"
+    )
+    p_search.add_argument(
+        "--amount", "-a",
+        help="Search by exact amount (e.g., 365.95)"
+    )
+    p_search.add_argument(
+        "--from", dest="from_date",
+        help="Start of date range (YYYY-MM-DD)"
+    )
+    p_search.add_argument(
+        "--to", dest="to_date",
+        help="End of date range (YYYY-MM-DD)"
+    )
+    p_search.set_defaults(func=cmd_search)
 
     # list command
     p_list = subparsers.add_parser("list", help="List items pending export")

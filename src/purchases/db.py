@@ -238,3 +238,74 @@ def get_stats(conn: sqlite3.Connection) -> dict:
     )
     row = cursor.fetchone()
     return dict(row)
+
+
+def search_items(
+    conn: sqlite3.Connection,
+    *,
+    on_date: date | None = None,
+    amount: Decimal | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> Iterator[Item]:
+    """Search items by various filters.
+
+    Args:
+        conn: Database connection
+        on_date: Exact date to match
+        amount: Exact price to match
+        from_date: Start of date range (inclusive)
+        to_date: End of date range (inclusive)
+
+    Returns:
+        Iterator of matching Items
+    """
+    conditions = []
+    params: list = []
+
+    if on_date is not None:
+        conditions.append("purchase_date = ?")
+        params.append(on_date.isoformat())
+
+    if amount is not None:
+        conditions.append("price = ?")
+        params.append(float(amount))
+
+    if from_date is not None:
+        conditions.append("purchase_date >= ?")
+        params.append(from_date.isoformat())
+
+    if to_date is not None:
+        conditions.append("purchase_date <= ?")
+        params.append(to_date.isoformat())
+
+    where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+    cursor = conn.execute(
+        f"""
+        SELECT * FROM items
+        WHERE {where_clause}
+        ORDER BY purchase_date DESC, price DESC
+        """,
+        params,
+    )
+
+    for row in cursor:
+        yield Item(
+            id=row["id"],
+            order_id=row["order_id"],
+            vendor=row["vendor"],
+            name=row["name"],
+            price=Decimal(str(row["price"])),
+            currency=row["currency"],
+            quantity=row["quantity"],
+            purchase_date=date.fromisoformat(row["purchase_date"]),
+            category=row["category"],
+            vendor_category=row["vendor_category"],
+            vendor_sku=row["vendor_sku"],
+            order_url=row["order_url"],
+            item_url=row["item_url"],
+            is_digital=bool(row["is_digital"]),
+            is_consumable=bool(row["is_consumable"]),
+            exported_to_vault=bool(row["exported_to_vault"]),
+        )
